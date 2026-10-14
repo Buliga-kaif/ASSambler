@@ -1,7 +1,7 @@
 # ASSambler
 lab2
 до выполнения кода 
-<img width="311" height="207" alt="image" src="https://github.com/user-attachments/assets/2252167b-6df8-4099-a7cf-8ce7c58b2ab8" />
+<img width="273" height="161" alt="image" src="https://github.com/user-attachments/assets/59f4b914-71b3-47cc-bd86-e90bcde84997" />
 
 
 после выполнения кода 
