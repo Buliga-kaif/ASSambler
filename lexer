@@ -1,1 +1,62 @@
-34r5ty7u8
+Program      = { Stmt } ;
+
+Stmt         = VarDec 
+             | PrintStmt ;
+
+VarDec       = "let" IDENT "=" Expr ";" ;
+
+PrintStmt    = "print" Expr ";" ;
+
+Expr         = Term { ("+" | "-") Term } ;
+
+Term         = Factor { ("*" | "/") Factor } ;
+
+Factor       = NUMBER 
+             | IDENT 
+             | IDENT "(" ArgList ")"   // вызов функции
+             | "(" Expr ")" ;
+
+ArgList      = Expr { "," Expr } ;
+
+
+
+
+
+
+let vodka = 50;
+let vermouth = 25;
+let total = blend(vodka, vermouth);
+
+
+
+Program
+ │
+ ├── VarDec
+ │    ├── "let"
+ │    ├── IDENT("vodka")
+ │    ├── "="
+ │    └── Expr → Term → Factor → NUMBER("50")
+ │    └── ";"
+ │
+ ├── VarDec
+ │    ├── "let"
+ │    ├── IDENT("vermouth")
+ │    ├── "="
+ │    └── Expr → Term → Factor → NUMBER("25")
+ │    └── ";"
+ │
+ └── VarDec
+      ├── "let"
+      ├── IDENT("total")
+      ├── "="
+      └── Expr
+           └── Term
+                └── Factor
+                     ├── IDENT("blend")       ← имя функции
+                     ├── "("
+                     ├── ArgList
+                     │    ├── Expr → IDENT("vodka")
+                     │    ├── ","
+                     │    └── Expr → IDENT("vermouth")
+                     └── ")"
+      └── ";"
