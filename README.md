@@ -1,4 +1,25 @@
 # ASSambler
+lab1
+
+до
+
+<img width="235" height="163" alt="image" src="https://github.com/user-attachments/assets/d1bccee2-db16-4f6a-9095-616c740c9cee" />
+
+
+
+после
+
+<img width="260" height="164" alt="image" src="https://github.com/user-attachments/assets/37d81d0f-c13e-4c61-b1da-c228eb32fc75" />
+
+
+
+
+
+
+
+
+
+
 lab2
 до выполнения кода 
 <img width="273" height="161" alt="image" src="https://github.com/user-attachments/assets/59f4b914-71b3-47cc-bd86-e90bcde84997" />
