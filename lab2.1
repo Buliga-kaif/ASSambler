@@ -1,0 +1,76 @@
+section .data
+    a dd 5678901
+    b dd 6789012
+    c dd 7890123
+    d dd 8901234
+    e dd 9012345
+    f dd 10123456
+    result_val dq 0
+
+section .text
+global _start
+
+_start:
+    mov eax, -25
+    cdq
+    idiv dword [a]
+
+    add eax, dword [c]
+    adc edx, 0
+
+    push edx
+    push eax
+
+    mov eax, dword [b]
+    imul dword [a]
+
+    push edx
+    push eax
+
+    pop eax
+    pop edx
+    mov ebx, eax
+    mov ecx, edx
+
+    pop eax
+    pop edx
+
+    sub eax, ebx
+    sbb edx, ecx
+
+    push edx
+    push eax
+
+    mov eax, dword [c]
+    imul dword [b]
+
+    sar edx, 1
+    rcr eax, 1
+
+    add eax, 1
+    adc edx, 0
+
+    push edx
+    push eax
+
+    sub esp, 4
+    fstcw word [esp]
+    mov ax, word [esp]
+    or ax, 0C00h
+    mov word [esp], ax
+    fldcw word [esp]
+
+    fild qword [esp+8]
+    fild qword [esp]
+    fdivp st(1), st(0)
+
+    fistp qword [result_val]
+
+    fldcw word [esp]
+    add esp, 4
+
+    add esp, 16
+
+    mov eax, 1
+    xor ebx, ebx
+    int 0x80

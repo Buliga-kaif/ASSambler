@@ -1,0 +1,84 @@
+section .bss
+    temp_byte resb 1
+
+section .text
+global _start
+
+_start:
+    mov eax, 0x11111111
+    mov ebx, 0x22222222
+
+    mov ecx, eax
+    mov eax, ebx
+    mov ebx, ecx
+
+    mov eax, 0x11111111
+    mov ebx, 0x22222222
+    lea ecx, [eax+ebx]
+    neg eax
+    lea eax, [ecx+eax]
+    neg ebx
+    lea ebx, [ecx+ebx]
+
+    mov eax, 0x11111111
+    mov ebx, 0x22222222
+    push eax
+    push ebx
+    pop eax
+    pop ebx
+
+    xor eax, eax
+    xor ebx, ebx
+    xor ecx, ecx
+    xor edx, edx
+
+    mov ax, 0x3333
+    mov bx, 0x4444
+
+    mov cx, ax
+    mov ax, bx
+    mov bx, cx
+
+    mov ax, 0x3333
+    mov bx, 0x4444
+    movzx ecx, ax
+    movzx edx, bx
+    lea ecx, [ecx+edx]
+    neg eax
+    lea eax, [ecx+eax]
+    neg ebx
+    lea ebx, [ecx+ebx]
+
+    mov ax, 0x3333
+    mov bx, 0x4444
+    push ax
+    push bx
+    pop ax
+    pop bx
+
+    xor eax, eax
+    xor ebx, ebx
+    xor ecx, ecx
+
+    mov al, 0x55
+    mov bl, 0x66
+
+    mov cl, al
+    mov al, bl
+    mov bl, cl
+
+    mov al, 0x55
+    mov bl, 0x66
+    xor al, bl
+    xor bl, al
+    xor al, bl
+
+    mov al, 0x55
+    mov bl, 0x66
+    mov [temp_byte], al
+    mov al, bl
+    mov bl, [temp_byte]
+
+    mov eax, 1
+    xor ebx, ebx
+    int 0x80
