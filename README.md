@@ -27,3 +27,11 @@ lab2
 
 после выполнения кода 
 <img width="359" height="160" alt="image" src="https://github.com/user-attachments/assets/62cf2130-068c-4f46-adba-e75bc4525738" />
+
+
+
+lab3
+
+
+
+<img width="1227" height="562" alt="image" src="https://github.com/user-attachments/assets/24ba46c4-32fe-4f8e-950d-cc97a3a8e1e5" />
