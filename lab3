@@ -1,0 +1,230 @@
+
+
+section .bss
+rand resd 1
+array resw 512
+counters resb 4
+number resb 8
+
+section .data
+
+blocks_devider db 10,10, "=====================================", 10, 10
+blocks_devider_len equ $ - blocks_devider
+file_name db "file.txt", 0
+space db ' '
+
+section .text
+global _start
+
+_start:
+
+call RANDOM
+and eax, 0xFFFF
+test eax, 1
+je even
+jmp odd
+
+
+even:
+movzx edi, byte [counters]
+mov [array + edi*2], ax
+inc byte [counters]
+cmp byte [counters], 127
+ja result
+
+jmp check_cmp_50000
+
+odd:
+movzx edi, byte [counters + 1]
+mov [array + (edi + 128)*2], ax
+inc byte [counters + 1]
+cmp byte [counters + 1], 127
+ja result
+
+check_cmp_50000:
+cmp eax, 50000
+jb check_cmp_10000
+
+movzx edi, byte [counters + 2]
+mov [array + (edi + 256)*2], ax
+inc byte [counters + 2]
+cmp byte [counters + 2], 127
+ja result
+jmp _start
+
+check_cmp_10000:
+cmp eax, 10000
+jae _start
+
+movzx edi, byte [counters + 3]
+mov [array + (edi + 384)*2], ax
+inc byte [counters + 3]
+cmp byte [counters + 3], 127
+ja result
+jmp _start
+
+
+result:
+
+xor esi, esi
+console_writing_cycle:
+call WRITE_TO_CONSOLE
+inc esi
+cmp esi, 4
+jb console_writing_cycle
+
+
+mov eax, 5
+mov ebx, file_name
+mov ecx, 0x241
+mov edx, 0o644
+int 0x80
+
+mov ebx, eax
+
+xor esi, esi
+file_writing_cycle:
+call WRITE_TO_FILE
+inc esi
+cmp esi, 4
+jb file_writing_cycle
+
+
+mov eax, 6
+int 0x80
+
+mov eax, 1
+xor ebx, ebx
+int 0x80
+
+
+RANDOM:
+mov eax, 355
+lea ebx, [rand]
+mov ecx, 4
+mov edx, 1
+int 0x80
+
+mov eax, [rand]
+ret
+
+
+WRITE_TO_CONSOLE:
+movzx eax, byte [counters + esi]
+push eax
+xor edi, edi
+
+mov eax, 4
+mov ecx, blocks_devider
+mov edx, blocks_devider_len
+int 0x80
+
+
+WRITE_TO_CONSOLE_cycle_counters_i:
+cmp byte [counters + esi], 0
+je WRITE_TO_CONSOLE_return
+
+mov eax, esi
+imul eax, 128
+add eax, edi
+movzx eax, word [array + eax*2]
+call NUMBER_TO_STR
+
+
+mov eax, 4
+mov ebx, 1
+lea ecx, dword [number]
+mov edx, 4
+int 0x80
+
+
+mov eax, 4
+mov ebx, 1
+lea ecx, dword [number+4]
+mov edx, 4
+int 0x80
+
+
+mov eax, 4
+mov ebx, 1
+mov ecx, space
+mov edx, 1
+int 0x80
+
+dec byte [counters + esi]
+inc edi
+jmp WRITE_TO_CONSOLE_cycle_counters_i
+
+WRITE_TO_CONSOLE_return:
+pop eax
+mov byte [counters + esi], al
+ret
+
+
+WRITE_TO_FILE:
+movzx eax, byte [counters + esi]
+push eax
+xor edi, edi
+
+mov eax, 4
+mov ecx, blocks_devider
+mov edx, blocks_devider_len
+int 0x80
+
+WRITE_TO_FILE_cycle_counters_i:
+cmp byte [counters + esi], 0
+je WRITE_TO_FILE_return
+
+mov eax, esi
+imul eax, 128
+add eax, edi
+movzx eax, word [array + eax*2]
+call NUMBER_TO_STR
+
+
+mov eax, 4
+lea ecx, dword [number]
+mov edx, 4
+int 0x80
+
+
+mov eax, 4
+lea ecx, dword [number+4]
+mov edx, 4
+int 0x80
+
+
+mov eax, 4
+mov ecx, space
+mov edx, 1
+int 0x80
+
+dec byte [counters + esi]
+inc edi
+jmp WRITE_TO_FILE_cycle_counters_i
+
+WRITE_TO_FILE_return:
+pop eax
+mov byte [counters + esi], al
+ret
+
+
+NUMBER_TO_STR:
+mov dword [number], '0000'
+mov dword [number+4], '0000'
+push edi
+mov edi, 7
+mov ecx, 10
+
+NUMBER_TO_STR_division_cycle:
+xor edx, edx
+div ecx
+add dl, '0'
+mov byte [number + edi], dl
+dec edi
+cmp eax, 0
+jne NUMBER_TO_STR_division_cycle
+
+NUMBER_TO_STR_return:
+pop edi
+ret

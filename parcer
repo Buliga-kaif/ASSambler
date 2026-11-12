@@ -1,0 +1,1190 @@
+
+
+
+
+%define TOK_EOF     0
+%define TOK_NUM     1
+%define TOK_IDENT   2
+%define TOK_LET     3
+%define TOK_PRINT   4
+%define TOK_IF      5
+%define TOK_ELSE    6
+%define TOK_WHILE   7
+%define TOK_ASSIGN  8
+%define TOK_SEMI    9
+%define TOK_PLUS    10
+%define TOK_MINUS   11
+%define TOK_MUL     12
+%define TOK_DIV     13
+%define TOK_LPAREN  14
+%define TOK_RPAREN  15
+%define TOK_LBRACE  16
+%define TOK_RBRACE  17
+%define TOK_EQ      18   ; ==
+%define TOK_NE      19   ; !=
+%define TOK_LT      20   ; <
+%define TOK_GT      21   ; >
+%define TOK_LE      22   ; <=
+%define TOK_GE      23   ; >=
+
+%define NODE_PROGRAM    1
+%define NODE_BLOCK      2
+%define NODE_VAR_DEC    3
+%define NODE_ASSIGN     4
+%define NODE_PRINT      5
+%define NODE_IF         6
+%define NODE_WHILE      7
+%define NODE_BINOP      8
+%define NODE_UNARY      9
+%define NODE_NUM        10
+%define NODE_IDENT      11
+
+
+%define NODE_SIZE 24
+
+
+section .data
+    filename    db "test.lang", 0
+    mode        db "r", 0
+    
+    fmt_file    db "--- Содержимое файла ---", 10, "%s", 10, "------------------------", 10, 0
+    fmt_error   db "Ошибка синтаксиса на позиции %d", 10, 0
+    fmt_ast     db "--- AST ---", 10, 0
+    
+    ; Ключевые слова
+    kw_let      db "let", 0
+    kw_print    db "print", 0
+    kw_if       db "if", 0
+    kw_else     db "else", 0
+    kw_while    db "while", 0
+    
+    ; Имена узлов для печати
+    name_program    db "Program", 0
+    name_block      db "Block", 0
+    name_vardec     db "VarDec", 0
+    name_assign     db "Assign", 0
+    name_print      db "Print", 0
+    name_if         db "If", 0
+    name_while      db "While", 0
+    name_num        db "Num", 0
+    name_ident      db "Ident", 0
+    name_binop      db "BinOp", 0
+    name_unary      db "Unary", 0
+    
+    ; Форматы для печати
+    fmt_indent  db "%s%s", 10, 0
+    fmt_val     db "%s%s(%s)", 10, 0
+    spaces      db "                                                            ", 0
+
+section .bss
+    file_buffer     resb 8192
+    bytes_read      resd 1
+    
+    ; Пул узлов AST (200 узлов * 24 байта = 4800 байт)
+    node_pool       resb 4800
+    node_count      resd 1
+    
+    ; Состояние лексера
+    parse_pos       resd 1
+    cur_token_type  resd 1
+    cur_token_val   resb 64
+    cur_token_start resd 1
+    
+    root_ast        resd 1
+
+section .text
+
+alloc_node:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push ecx
+    
+    mov eax, [node_count]
+    imul eax, eax, NODE_SIZE
+    lea ebx, [node_pool]
+    add ebx, eax
+    
+    mov ecx, [ebp+8]
+    mov [ebx], ecx
+    mov ecx, [ebp+12]
+    mov [ebx+4], ecx
+    mov ecx, [ebp+16]
+    mov [ebx+8], ecx
+    mov ecx, [ebp+20]
+    mov [ebx+12], ecx
+    mov ecx, [ebp+24]
+    mov [ebx+16], ecx
+    mov ecx, [ebp+28]
+    mov [ebx+20], ecx
+    
+    inc dword [node_count]
+    mov eax, ebx
+    
+    pop ecx
+    pop ebx
+    pop ebp
+    ret 24
+
+error:
+    push ebp
+    mov ebp, esp
+    push dword [parse_pos]
+    push fmt_error
+    call printf
+    add esp, 8
+    push dword 1
+    call exit
+
+next_token:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    push edi
+    
+    mov esi, [parse_pos]
+
+.skip_ws:
+    movzx eax, byte [esi]
+    test al, al
+    jz .eof
+    cmp al, ' '
+    je .skip_inc
+    cmp al, 10
+    je .skip_inc
+    cmp al, 13
+    je .skip_inc
+    cmp al, 9
+    je .skip_inc
+    jmp .check
+    
+.skip_inc:
+    inc esi
+    jmp .skip_ws
+
+.check:
+    mov [cur_token_start], esi
+    
+    ; Числа
+    cmp al, '0'
+    jl .check_sym
+    cmp al, '9'
+    jg .check_sym
+    mov ebx, esi
+.num_loop:
+    movzx eax, byte [esi]
+    cmp al, '0'
+    jl .num_end
+    cmp al, '9'
+    jg .num_end
+    inc esi
+    jmp .num_loop
+.num_end:
+    mov byte [esi], 0
+    lea edi, [cur_token_val]
+    call .strcpy
+    mov byte [esi], al
+    mov dword [cur_token_type], TOK_NUM
+    jmp .done
+
+.check_sym:
+    cmp al, 'a'
+    jl .sym_ops
+    cmp al, 'z'
+    jg .check_upper
+    jmp .read_ident
+.check_upper:
+    cmp al, 'A'
+    jl .sym_ops
+    cmp al, 'Z'
+    jg .sym_ops
+.read_ident:
+    mov ebx, esi
+.ident_loop:
+    movzx eax, byte [esi]
+    cmp al, 'a'
+    jl .ident_check
+    cmp al, 'z'
+    jle .ident_cont
+    cmp al, 'A'
+    jl .ident_check
+    cmp al, 'Z'
+    jle .ident_cont
+    cmp al, '0'
+    jl .ident_check
+    cmp al, '9'
+    jg .ident_check
+    cmp al, '_'
+    jne .ident_end
+.ident_cont:
+    inc esi
+    jmp .ident_loop
+.ident_check:
+    cmp al, '_'
+    je .ident_cont
+.ident_end:
+    mov byte [esi], 0
+    lea edi, [cur_token_val]
+    call .strcpy
+    mov byte [esi], al
+    
+    ; Проверка ключевых слов
+    lea eax, [cur_token_val]
+    lea ebx, [kw_let]
+    call .strcmp
+    test eax, eax
+    jz .is_let
+    lea eax, [cur_token_val]
+    lea ebx, [kw_print]
+    call .strcmp
+    test eax, eax
+    jz .is_print
+    lea eax, [cur_token_val]
+    lea ebx, [kw_if]
+    call .strcmp
+    test eax, eax
+    jz .is_if
+    lea eax, [cur_token_val]
+    lea ebx, [kw_else]
+    call .strcmp
+    test eax, eax
+    jz .is_else
+    lea eax, [cur_token_val]
+    lea ebx, [kw_while]
+    call .strcmp
+    test eax, eax
+    jz .is_while
+    
+    mov dword [cur_token_type], TOK_IDENT
+    jmp .done
+
+.is_let:
+    mov dword [cur_token_type], TOK_LET
+    jmp .done
+.is_print:
+    mov dword [cur_token_type], TOK_PRINT
+    jmp .done
+.is_if:
+    mov dword [cur_token_type], TOK_IF
+    jmp .done
+.is_else:
+    mov dword [cur_token_type], TOK_ELSE
+    jmp .done
+.is_while:
+    mov dword [cur_token_type], TOK_WHILE
+    jmp .done
+
+.sym_ops:
+    ; Операторы с lookahead
+    cmp al, '='
+    je .op_eq
+    cmp al, '!'
+    je .op_ne
+    cmp al, '<'
+    je .op_lt
+    cmp al, '>'
+    je .op_gt
+    cmp al, '+'
+    je .op_single_plus
+    cmp al, '-'
+    je .op_single_minus
+    cmp al, '*'
+    je .op_single_mul
+    cmp al, '/'
+    je .op_single_div
+    cmp al, '('
+    je .op_single_lparen
+    cmp al, ')'
+    je .op_single_rparen
+    cmp al, '{'
+    je .op_single_lbrace
+    cmp al, '}'
+    je .op_single_rbrace
+    cmp al, ';'
+    je .op_single_semi
+    jmp .error_tok
+
+.op_eq:
+    inc esi
+    movzx eax, byte [esi]
+    cmp al, '='
+    jne .op_single_assign
+    inc esi
+    mov dword [cur_token_type], TOK_EQ
+    mov word [cur_token_val], '=='
+    mov byte [cur_token_val+2], 0
+    jmp .done
+.op_single_assign:
+    mov dword [cur_token_type], TOK_ASSIGN
+    mov byte [cur_token_val], '='
+    mov byte [cur_token_val+1], 0
+    jmp .done
+
+.op_ne:
+    inc esi
+    movzx eax, byte [esi]
+    cmp al, '='
+    jne .error_tok
+    inc esi
+    mov dword [cur_token_type], TOK_NE
+    mov word [cur_token_val], '!='
+    mov byte [cur_token_val+2], 0
+    jmp .done
+
+.op_lt:
+    inc esi
+    movzx eax, byte [esi]
+    cmp al, '='
+    jne .op_single_lt
+    inc esi
+    mov dword [cur_token_type], TOK_LE
+    mov word [cur_token_val], '<='
+    mov byte [cur_token_val+2], 0
+    jmp .done
+.op_single_lt:
+    mov dword [cur_token_type], TOK_LT
+    mov byte [cur_token_val], '<'
+    mov byte [cur_token_val+1], 0
+    jmp .done
+
+.op_gt:
+    inc esi
+    movzx eax, byte [esi]
+    cmp al, '='
+    jne .op_single_gt
+    inc esi
+    mov dword [cur_token_type], TOK_GE
+    mov word [cur_token_val], '>='
+    mov byte [cur_token_val+2], 0
+    jmp .done
+.op_single_gt:
+    mov dword [cur_token_type], TOK_GT
+    mov byte [cur_token_val], '>'
+    mov byte [cur_token_val+1], 0
+    jmp .done
+
+.op_single_plus:
+    mov dword [cur_token_type], TOK_PLUS
+    mov byte [cur_token_val], '+'
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+.op_single_minus:
+    mov dword [cur_token_type], TOK_MINUS
+    mov byte [cur_token_val], '-'
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+.op_single_mul:
+    mov dword [cur_token_type], TOK_MUL
+    mov byte [cur_token_val], '*'
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+.op_single_div:
+    mov dword [cur_token_type], TOK_DIV
+    mov byte [cur_token_val], '/'
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+.op_single_lparen:
+    mov dword [cur_token_type], TOK_LPAREN
+    mov byte [cur_token_val], '('
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+.op_single_rparen:
+    mov dword [cur_token_type], TOK_RPAREN
+    mov byte [cur_token_val], ')'
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+.op_single_lbrace:
+    mov dword [cur_token_type], TOK_LBRACE
+    mov byte [cur_token_val], '{'
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+.op_single_rbrace:
+    mov dword [cur_token_type], TOK_RBRACE
+    mov byte [cur_token_val], '}'
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+.op_single_semi:
+    mov dword [cur_token_type], TOK_SEMI
+    mov byte [cur_token_val], ';'
+    mov byte [cur_token_val+1], 0
+    inc esi
+    jmp .done
+
+.error_tok:
+    call error
+
+.eof:
+    mov dword [cur_token_type], TOK_EOF
+    mov byte [cur_token_val], 0
+
+.done:
+    mov [parse_pos], esi
+    pop edi
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+.strcpy:
+    push edi
+    push esi
+    mov esi, ebx
+.cp_loop:
+    mov al, [esi]
+    mov [edi], al
+    test al, al
+    jz .cp_done
+    inc esi
+    inc edi
+    jmp .cp_loop
+.cp_done:
+    pop esi
+    pop edi
+    ret
+
+.strcmp:
+    push ebx
+    push edx
+    xor edx, edx
+.sc_loop:
+    movzx ecx, byte [eax+edx]
+    movzx ebx, byte [ebx+edx]
+    cmp cl, bl
+    jne .sc_ne
+    test cl, cl
+    jz .sc_eq
+    inc edx
+    jmp .sc_loop
+.sc_eq:
+    xor eax, eax
+    pop edx
+    pop ebx
+    ret
+.sc_ne:
+    mov eax, 1
+    pop edx
+    pop ebx
+    ret
+
+expect:
+    push ebp
+    mov ebp, esp
+    mov eax, [ebp+8]
+    cmp eax, [cur_token_type]
+    jne .err
+    call next_token
+    pop ebp
+    ret 4
+.err:
+    call error
+
+parse_program:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    
+    xor esi, esi            ; esi = первый stmt (sibling chain)
+    xor ebx, ebx            ; ebx = последний stmt
+    
+.loop:
+    cmp dword [cur_token_type], TOK_EOF
+    je .done
+    
+    push esi
+    push ebx
+    call parse_stmt
+    mov edi, eax
+    pop ebx
+    pop esi
+    
+    test esi, esi
+    jz .first
+    mov [ebx+20], edi      
+    mov ebx, edi
+    jmp .loop
+.first:
+    mov esi, edi
+    mov ebx, edi
+    jmp .loop
+
+.done:
+    ; Создаём узел Program
+    push dword 0            ; sibling
+    push dword 0            ; child3
+    push dword 0            ; child2
+    push esi                ; child1 (первый stmt)
+    push name_program       ; value_ptr
+    push dword NODE_PROGRAM ; type
+    call alloc_node
+    
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+parse_stmt:
+    push ebp
+    mov ebp, esp
+    push ebx
+    
+    mov eax, [cur_token_type]
+    cmp eax, TOK_LET
+    je .var_dec
+    cmp eax, TOK_PRINT
+    je .print_stmt
+    cmp eax, TOK_IF
+    je .if_stmt
+    cmp eax, TOK_WHILE
+    je .while_stmt
+    cmp eax, TOK_LBRACE
+    je .block
+    cmp eax, TOK_IDENT
+    je .assign_stmt
+    call error
+
+.var_dec:
+    call parse_var_dec
+    jmp .done
+.print_stmt:
+    call parse_print_stmt
+    jmp .done
+.if_stmt:
+    call parse_if_stmt
+    jmp .done
+.while_stmt:
+    call parse_while_stmt
+    jmp .done
+.block:
+    call parse_block
+    jmp .done
+.assign_stmt:
+    call parse_assign_stmt
+    jmp .done
+
+.done:
+    pop ebx
+    pop ebp
+    ret
+
+parse_var_dec:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    
+    push dword TOK_LET
+    call expect
+    
+    ; Сохраняем имя идентификатора
+    lea eax, [cur_token_val]
+    push eax
+    call .strdup
+    mov ebx, eax
+    add esp, 4
+    
+    push dword TOK_IDENT
+    call expect
+    
+    push dword TOK_ASSIGN
+    call expect
+    
+    call parse_expr
+    mov esi, eax
+    
+    push dword TOK_SEMI
+    call expect
+    
+    ; Узел VarDec: child1=ident_name, child2=expr
+    push dword 0            ; sibling
+    push dword 0            ; child3
+    push esi                ; child2 (expr)
+    push ebx                ; child1 (ident)
+    push name_vardec
+    push dword NODE_VAR_DEC
+    call alloc_node
+    
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+.strdup:
+    ; Аргумент: [esp+4] = src строка
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    push edi
+    
+    mov esi, [ebp+8]
+    push 64
+    call malloc
+    add esp, 4
+    mov edi, eax
+    mov ebx, eax
+.cp:
+    mov al, [esi]
+    mov [edi], al
+    test al, al
+    jz .done
+    inc esi
+    inc edi
+    jmp .cp
+.done:
+    mov eax, ebx
+    pop edi
+    pop esi
+    pop ebx
+    pop ebp
+    ret 4
+
+parse_assign_stmt:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    
+    lea eax, [cur_token_val]
+    push eax
+    call .strdup
+    mov ebx, eax
+    
+    push dword TOK_IDENT
+    call expect
+    push dword TOK_ASSIGN
+    call expect
+    
+    call parse_expr
+    mov esi, eax
+    
+    push dword TOK_SEMI
+    call expect
+    
+    push dword 0
+    push dword 0
+    push esi
+    push ebx
+    push name_assign
+    push dword NODE_ASSIGN
+    call alloc_node
+    
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+parse_print_stmt:
+    push ebp
+    mov ebp, esp
+    push ebx
+    
+    push dword TOK_PRINT
+    call expect
+    
+    call parse_expr
+    mov ebx, eax
+    
+    push dword TOK_SEMI
+    call expect
+    
+    push dword 0
+    push dword 0
+    push ebx
+    push dword 0
+    push name_print
+    push dword NODE_PRINT
+    call alloc_node
+    
+    pop ebx
+    pop ebp
+    ret
+
+parse_if_stmt:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    push edi
+    
+    push dword TOK_IF
+    call expect
+    push dword TOK_LPAREN
+    call expect
+    
+    call parse_expr
+    mov ebx, eax            ; condition
+    
+    push dword TOK_RPAREN
+    call expect
+    
+    call parse_block
+    mov esi, eax            ; then_block
+    
+    ; Проверяем наличие else
+    xor edi, edi
+    cmp dword [cur_token_type], TOK_ELSE
+    jne .no_else
+    
+    push dword TOK_ELSE
+    call expect
+    call parse_block
+    mov edi, eax
+    
+.no_else:
+    ; Узел If: child1=cond, child2=then, child3=else
+    push dword 0
+    push edi                ; child3 (else)
+    push esi                ; child2 (then)
+    push ebx                ; child1 (cond)
+    push name_if
+    push dword NODE_IF
+    call alloc_node
+    
+    pop edi
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+parse_while_stmt:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    
+    push dword TOK_WHILE
+    call expect
+    push dword TOK_LPAREN
+    call expect
+    
+    call parse_expr
+    mov ebx, eax
+    
+    push dword TOK_RPAREN
+    call expect
+    
+    call parse_block
+    mov esi, eax
+    
+    push dword 0
+    push dword 0
+    push esi
+    push ebx
+    push name_while
+    push dword NODE_WHILE
+    call alloc_node
+    
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+parse_block:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    
+    push dword TOK_LBRACE
+    call expect
+    
+    xor esi, esi
+    xor ebx, ebx
+    
+.loop:
+    cmp dword [cur_token_type], TOK_RBRACE
+    je .end_loop
+    
+    push esi
+    push ebx
+    call parse_stmt
+    mov edi, eax
+    pop ebx
+    pop esi
+    
+    test esi, esi
+    jz .first
+    mov [ebx+20], edi
+    mov ebx, edi
+    jmp .loop
+.first:
+    mov esi, edi
+    mov ebx, edi
+    jmp .loop
+
+.end_loop:
+    push dword TOK_RBRACE
+    call expect
+    
+    push dword 0
+    push dword 0
+    push esi
+    push dword 0
+    push name_block
+    push dword NODE_BLOCK
+    call alloc_node
+    
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+parse_expr:
+    jmp parse_comparison
+
+parse_comparison:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    
+    call parse_term
+    mov ebx, eax
+
+.loop:
+    mov eax, [cur_token_type]
+    cmp eax, TOK_EQ
+    je .is_op
+    cmp eax, TOK_NE
+    je .is_op
+    cmp eax, TOK_LT
+    je .is_op
+    cmp eax, TOK_GT
+    je .is_op
+    cmp eax, TOK_LE
+    je .is_op
+    cmp eax, TOK_GE
+    je .is_op
+    jmp .done
+
+.is_op:
+    lea eax, [cur_token_val]
+    push eax
+    call .strdup
+    mov esi, eax
+    
+    call next_token
+    
+    call parse_term
+    
+    ; Узел BinOp: child1=left, child2=right
+    push dword 0
+    push dword 0
+    push eax                ; right
+    push ebx                ; left
+    push esi                ; op name
+    push dword NODE_BINOP
+    call alloc_node
+    
+    mov ebx, eax
+    jmp .loop
+
+.done:
+    mov eax, ebx
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+parse_term:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    
+    call parse_unary
+    mov ebx, eax
+
+.loop:
+    mov eax, [cur_token_type]
+    cmp eax, TOK_MUL
+    je .is_op
+    cmp eax, TOK_DIV
+    je .is_op
+    jmp .done
+
+.is_op:
+    lea eax, [cur_token_val]
+    push eax
+    call .strdup
+    mov esi, eax
+    
+    call next_token
+    call parse_unary
+    
+    push dword 0
+    push dword 0
+    push eax
+    push ebx
+    push esi
+    push dword NODE_BINOP
+    call alloc_node
+    
+    mov ebx, eax
+    jmp .loop
+
+.done:
+    mov eax, ebx
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+parse_unary:
+    push ebp
+    mov ebp, esp
+    push ebx
+    
+    cmp dword [cur_token_type], TOK_MINUS
+    jne .no_unary
+    
+    call next_token
+    call parse_factor
+    mov ebx, eax
+    
+    ; Узел Unary: child1=operand
+    push dword 0
+    push dword 0
+    push ebx
+    push name_unary
+    push dword NODE_UNARY
+    call alloc_node
+    jmp .done
+
+.no_unary:
+    call parse_factor
+
+.done:
+    pop ebx
+    pop ebp
+    ret
+
+parse_factor:
+    push ebp
+    mov ebp, esp
+    push ebx
+    
+    mov eax, [cur_token_type]
+    cmp eax, TOK_NUM
+    je .is_num
+    cmp eax, TOK_IDENT
+    je .is_ident
+    cmp eax, TOK_LPAREN
+    je .is_lparen
+    call error
+
+.is_num:
+    lea eax, [cur_token_val]
+    push eax
+    call .strdup
+    mov ebx, eax
+    
+    push dword TOK_NUM
+    call expect
+    
+    push dword 0
+    push dword 0
+    push dword 0
+    push ebx
+    push name_num
+    push dword NODE_NUM
+    call alloc_node
+    jmp .done
+
+.is_ident:
+    lea eax, [cur_token_val]
+    push eax
+    call .strdup
+    mov ebx, eax
+    
+    push dword TOK_IDENT
+    call expect
+    
+    push dword 0
+    push dword 0
+    push dword 0
+    push ebx
+    push name_ident
+    push dword NODE_IDENT
+    call alloc_node
+    jmp .done
+
+.is_lparen:
+    push dword TOK_LPAREN
+    call expect
+    
+    call parse_expr
+    mov ebx, eax
+    
+    push dword TOK_RPAREN
+    call expect
+    
+    mov eax, ebx
+
+.done:
+    pop ebx
+    pop ebp
+    ret
+
+print_ast:
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    push edi
+    
+    mov esi, [ebp+8]        ; node
+    mov edi, [ebp+12]       ; depth
+    
+    test esi, esi
+    jz .done
+    
+    ; Вычисляем отступ
+    mov eax, edi
+    imul eax, eax, 2
+    mov ebx, 60
+    sub ebx, eax
+    cmp ebx, 0
+    jg .ok
+    mov ebx, 0
+.ok:
+    lea ecx, [spaces]
+    add ecx, ebx
+    
+    ; Печатаем узел
+    mov eax, [esi]          ; type
+    cmp eax, NODE_NUM
+    je .print_leaf
+    cmp eax, NODE_IDENT
+    je .print_leaf
+    
+    ; Узел с детьми
+    push dword 0            ; выравнивание
+    push dword [esi+4]      ; value/name
+    push ecx                ; indent
+    push fmt_indent
+    call printf
+    add esp, 16
+    
+    ; Рекурсия по детям
+    push edi
+    inc dword [esp]
+    push dword [esi+16]     ; child3
+    call print_ast
+    add esp, 8
+    
+    push edi
+    inc dword [esp]
+    push dword [esi+12]     ; child2
+    call print_ast
+    add esp, 8
+    
+    push edi
+    inc dword [esp]
+    push dword [esi+8]      ; child1
+    call print_ast
+    add esp, 8
+    
+    ; Рекурсия по sibling
+    push edi
+    push dword [esi+20]     ; sibling
+    call print_ast
+    add esp, 8
+    
+    jmp .done
+
+.print_leaf:
+    push dword 0
+    push dword [esi+4]
+    push ecx
+    push fmt_val
+    call printf
+    add esp, 16
+    
+    push edi
+    push dword [esi+20]
+    call print_ast
+    add esp, 8
+
+.done:
+    pop edi
+    pop esi
+    pop ebx
+    pop ebp
+    ret
+
+main:
+    lea ecx, [esp+4]
+    and esp, -16
+    push dword [ecx-4]
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
+    push edi
+    
+    ; Чтение файла
+    push mode
+    push filename
+    call fopen
+    add esp, 8
+    test eax, eax
+    jz .file_err
+    mov ebx, eax
+    
+    push ebx
+    push dword 8192
+    push dword 1
+    push file_buffer
+    call fread
+    add esp, 16
+    mov [bytes_read], eax
+    
+    push ebx
+    call fclose
+    add esp, 4
+    
+    push dword 0
+    push file_buffer
+    push fmt_file
+    call printf
+    add esp, 12
+    
+    ; Инициализация парсера
+    mov dword [parse_pos], file_buffer
+    mov dword [node_count], 0
+    call next_token
+    
+    ; Парсинг
+    call parse_program
+    mov [root_ast], eax
+    
+    ; Печать AST
+    push fmt_ast
+    call printf
+    add esp, 4
+    
+    push dword 0
+    push dword [root_ast]
+    call print_ast
+    add esp, 8
+    
+    push dword 0
+    call exit
+
+.file_err:
+    push fmt_error
+    call printf
+    add esp, 4
+    push dword 1
+    call exit
