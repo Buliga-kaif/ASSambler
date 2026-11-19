@@ -35,3 +35,14 @@ lab3
 
 
 <img width="1227" height="562" alt="image" src="https://github.com/user-attachments/assets/24ba46c4-32fe-4f8e-950d-cc97a3a8e1e5" />
+
+
+
+
+
+lab4
+
+
+
+<img width="489" height="102" alt="изображение" src="https://github.com/user-attachments/assets/a528063c-e715-418a-805f-219149745874" />
+
