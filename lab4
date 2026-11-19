@@ -1,0 +1,102 @@
+.386                            
+.model small, stdcall           
+
+.data
+    num             DWORD 12345678h 
+    
+    res_ones        DWORD ?    
+    res_zeros       DWORD ?     
+    res_pair_ones   DWORD ?    
+    res_pair_zeros  DWORD ?     
+    res_reversed    BYTE  ?    
+
+.code
+start:
+    mov ax, @data
+    mov ds, ax
+
+    mov eax, num        
+    mov ecx, 32         
+    xor ebx, ebx        
+    xor edx, edx        
+m1_loop:
+    shr eax, 1          
+    jc m1_is_one        
+    inc edx            
+    jmp m1_next
+m1_is_one:
+    inc ebx             
+m1_next:
+    dec ecx
+    jnz m1_loop         
+    
+    mov res_ones, ebx   
+    mov res_zeros, edx
+
+
+    mov eax, num        
+    mov ecx, 0          
+    xor ebx, ebx       
+    xor edx, edx        
+m2_loop:
+    bt eax, ecx         
+    jc m2_is_one        
+    inc edx             
+    jmp m2_next
+m2_is_one:
+    inc ebx
+m2_next:
+    inc ecx
+    cmp ecx, 32
+    jb m2_loop          
+    
+    mov res_ones, ebx
+    mov res_zeros, edx
+
+
+   
+    mov eax, num
+    mov ecx, 31         
+    xor ebx, ebx        
+    xor edx, edx        
+p_loop:
+    mov esi, eax
+    and esi, 3          
+    cmp esi, 0          
+    je p_zero
+    cmp esi, 3          
+    je p_one
+    jmp p_next          
+    
+p_zero:
+    inc edx
+    jmp p_next
+p_one:
+    inc ebx
+p_next:
+    shr eax, 1          
+    dec ecx
+    jnz p_loop
+    
+    mov res_pair_ones, ebx
+    mov res_pair_zeros, edx
+
+
+    mov al, byte ptr [num]  
+    mov cl, 8               
+    xor ah, ah              
+    
+rev_loop:
+    shr al, 1               
+    rcl ah, 1               
+    dec cl
+    jnz rev_loop
+    
+    mov res_reversed, ah    
+    mov byte ptr [num], ah  
+
+
+    mov ax, 4C00h
+    int 21h
+
+end start
