@@ -60,3 +60,204 @@ Program
                      │    └── Expr → IDENT("vermouth")
                      └── ")"
       └── ";"
+
+
+
+
+
+global _start
+
+section .data
+    	
+    msg_let       db "TOKEN_LET", 10
+    msg_print     db "TOKEN_PRINT", 10
+    msg_ident     db "TOKEN_IDENT", 10
+    msg_number    db "TOKEN_NUMBER", 10
+    msg_assign    db "TOKEN_ASSIGN (=)", 10
+    msg_semicolon db "TOKEN_SEMICOLON (;)", 10
+    msg_plus      db "TOKEN_PLUS (+)", 10
+    msg_lparen    db "TOKEN_LPAREN (()", 10
+    msg_rparen    db "TOKEN_RPAREN ())", 10
+    msg_eof       db "TOKEN_EOF", 10
+    msg_err       db "ERROR: Unknown char", 10
+
+    len_let       equ $ - msg_let
+    len_print     equ $ - msg_print
+    len_ident     equ $ - msg_ident
+    len_number    equ $ - msg_number
+    len_assign    equ $ - msg_assign
+    len_semicolon equ $ - msg_semicolon
+    len_plus      equ $ - msg_plus
+    len_lparen    equ $ - msg_lparen
+    len_rparen    equ $ - msg_rparen
+    len_eof       equ $ - msg_eof
+    len_err       equ $ - msg_err
+
+section .bss
+    pos resq 1          
+
+section .text
+_start:
+    mov qword [pos], 0  
+
+.loop:
+    call get_next_token
+    cmp rax, 0         
+    je .check_eof
+    
+    mov rdi, rax        
+    mov rdx, rbx        
+    call print_string
+    jmp .loop
+
+.check_eof:
+    mov rax, 60         
+    xor rdi, rdi       
+    syscall
+
+get_next_token:
+    mov rsi, [pos]      
+
+.skip_whitespace:
+    mov al, byte [input_str + rsi]
+    cmp al, 0
+    je .return_eof
+    cmp al, ' '
+    je .advance_and_skip
+    cmp al, 9           ; Tab
+    je .advance_and_skip
+    cmp al, 10          ; Newline
+    je .advance_and_skip
+    jmp .check_char
+
+.advance_and_skip:
+    inc rsi
+    mov [pos], rsi
+    jmp .skip_whitespace
+
+.check_char:
+    cmp al, 0
+    je .return_eof
+
+    cmp al, '_'
+    je .read_ident
+    cmp al, 'a'
+    jl .check_digit     
+    cmp al, 'z'
+    jg .check_digit     
+    jmp .read_ident
+
+.check_digit:
+    cmp al, '0'
+    jl .check_single_char
+    cmp al, '9'
+    jg .check_single_char
+    jmp .read_number
+
+.check_single_char:
+    cmp al, '='
+    je .ret_assign
+    cmp al, ';'
+    je .ret_semicolon
+    cmp al, '+'
+    je .ret_plus
+    cmp al, '('
+    je .ret_lparen
+    cmp al, ')'
+    je .ret_rparen
+    
+    mov rax, msg_err
+    mov rbx, len_err
+    ret
+
+.read_ident:
+    mov rdi, input_str
+    add rdi, rsi
+    mov rcx, [rdi]      
+    cmp cl, 'l'
+    jne .is_ident
+    cmp ch, 'e'
+    jne .is_ident
+    cmp byte [rdi+2], 't'
+    jne .is_ident
+    cmp byte [rdi+3], ' ' 
+    ; Если совпало "let"
+    add rsi, 3
+    mov [pos], rsi
+    mov rax, msg_let
+    mov rbx, len_let
+    ret
+
+.is_ident:
+    inc rsi
+    mov [pos], rsi
+    mov rax, msg_ident
+    mov rbx, len_ident
+    ret
+
+.read_number:
+    ; Упрощенно: съедаем цифры, пока они есть
+    mov rdi, input_str
+    add rdi, rsi
+.num_loop:
+    mov al, byte [rdi]
+    cmp al, '0'
+    jl .num_done
+    cmp al, '9'
+    jg .num_done
+    inc rdi
+    inc rsi
+    jmp .num_loop
+.num_done:
+    mov [pos], rsi
+    mov rax, msg_number
+    mov rbx, len_number
+    ret
+
+.ret_assign:
+    inc rsi
+    mov [pos], rsi
+    mov rax, msg_assign
+    mov rbx, len_assign
+    ret
+
+.ret_semicolon:
+    inc rsi
+    mov [pos], rsi
+    mov rax, msg_semicolon
+    mov rbx, len_semicolon
+    ret
+
+.ret_plus:
+    inc rsi
+    mov [pos], rsi
+    mov rax, msg_plus
+    mov rbx, len_plus
+    ret
+
+.ret_lparen:
+    inc rsi
+    mov [pos], rsi
+    mov rax, msg_lparen
+    mov rbx, len_lparen
+    ret
+
+.ret_rparen:
+    inc rsi
+    mov [pos], rsi
+    mov rax, msg_rparen
+    mov rbx, len_rparen
+    ret
+
+.return_eof:
+    mov rax, msg_eof
+    mov rbx, len_eof
+    ret
+
+print_string:
+    mov rax, 1          
+    mov rsi, rdi        
+    mov rdx, rdx      
+    mov rdi, 1          
+    syscall
+    ret
