@@ -1,5 +1,4 @@
-.386                            
-.model small, stdcall           
+ 
 
 .data
     num             DWORD 12345678h 
